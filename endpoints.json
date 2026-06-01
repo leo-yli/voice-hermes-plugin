@@ -1,0 +1,4 @@
+{
+  "apiBaseUrl": "https://asr-test.jlpay.com",
+  "serverUrl": "wss://asr-test.jlpay.com/openclaw/connect"
+}

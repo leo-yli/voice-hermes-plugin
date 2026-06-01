@@ -18,39 +18,54 @@ Xalgo Voice Hermes 平台插件。它通过 `voice-openclaw-plugin` 同款 Xalgo
 
 ## 安装
 
-### 1. 安装 Python 依赖
+### 一键安装
 
-如果你的 Hermes 环境已经包含 `httpx` 和 `websockets`，可以跳过这一步。
-
-```bash
-pip install -r /Users/leo/project/voice-hermes-plugin/requirements.txt
-```
-
-或手动安装：
+推荐直接从 GitHub 安装：
 
 ```bash
-pip install httpx websockets
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh | bash
 ```
 
-### 2. 安装插件到 Hermes
+这个脚本会自动完成：
 
-推荐使用软链接，方便本地修改后直接生效：
+- 从 `https://github.com/leo-yli/voice-hermes-plugin.git` 克隆或更新插件
+- 安装 Python 依赖 `httpx` 和 `websockets`
+- 把插件安装到 `~/.hermes/plugins/xalgo-voice-platform`
+- 自动把 `xalgo-voice-platform` 加入 `~/.hermes/config.yaml` 的 `plugins.enabled`
+- 修改配置前会生成 `config.yaml.bak.<timestamp>` 备份
+
+可选环境变量：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | HERMES_HOME=/opt/hermes BRANCH=main bash
+```
+
+如果 Hermes 使用特定 Python 环境：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | HERMES_PYTHON=/path/to/hermes/python bash
+```
+
+如果你只想安装插件、不安装依赖：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | SKIP_DEPS=1 bash
+```
+
+### 手动安装
+
+如果不能使用一键脚本，可以手动安装：
 
 ```bash
 mkdir -p ~/.hermes/plugins
-ln -s /Users/leo/project/voice-hermes-plugin ~/.hermes/plugins/xalgo-voice-platform
+git clone https://github.com/leo-yli/voice-hermes-plugin.git ~/.hermes/plugins/xalgo-voice-platform
+python3 -m pip install -r ~/.hermes/plugins/xalgo-voice-platform/requirements.txt
 ```
 
-如果目标机器不能访问当前项目目录，也可以复制：
-
-```bash
-mkdir -p ~/.hermes/plugins/xalgo-voice-platform
-cp -R /Users/leo/project/voice-hermes-plugin/* ~/.hermes/plugins/xalgo-voice-platform/
-```
-
-### 3. 启用插件
-
-编辑 `~/.hermes/config.yaml`，确保 `plugins.enabled` 包含插件名：
+然后编辑 `~/.hermes/config.yaml`，确保 `plugins.enabled` 包含插件名：
 
 ```yaml
 plugins:
@@ -60,7 +75,21 @@ plugins:
 
 如果已有其他插件，不要覆盖原列表，把 `xalgo-voice-platform` 追加进去即可。
 
-### 4. 绑定 Xalgo 账号
+### 升级
+
+再次运行一键安装脚本即可拉取最新版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh | bash
+```
+
+也可以手动更新：
+
+```bash
+git -C ~/.hermes/plugins/xalgo-voice-platform pull --ff-only
+```
+
+## 绑定 Xalgo 账号
 
 运行 Hermes gateway setup，选择 `Xalgo Voice`：
 
@@ -86,7 +115,7 @@ XALGO_VOICE_BOUND_USER_NAME=...
 XALGO_VOICE_DEVICE_LABEL=...
 ```
 
-### 5. 重启并验证
+## 重启并验证
 
 重启 Hermes gateway：
 

@@ -18,39 +18,54 @@ This plugin connects Xalgo glasses voice input to Hermes Agent:
 
 ## Installation
 
-### 1. Install Python dependencies
+### One-command Install
 
-Skip this step if your Hermes environment already includes `httpx` and `websockets`.
-
-```bash
-pip install -r /Users/leo/project/voice-hermes-plugin/requirements.txt
-```
-
-Or install them directly:
+Install directly from GitHub:
 
 ```bash
-pip install httpx websockets
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh | bash
 ```
 
-### 2. Install the plugin into Hermes
+The script will:
 
-Symlink is recommended during development:
+- Clone or update `https://github.com/leo-yli/voice-hermes-plugin.git`
+- Install Python dependencies: `httpx` and `websockets`
+- Install the plugin into `~/.hermes/plugins/xalgo-voice-platform`
+- Add `xalgo-voice-platform` to `plugins.enabled` in `~/.hermes/config.yaml`
+- Back up the config before editing it as `config.yaml.bak.<timestamp>`
+
+Optional environment variables:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | HERMES_HOME=/opt/hermes BRANCH=main bash
+```
+
+If Hermes uses a specific Python environment:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | HERMES_PYTHON=/path/to/hermes/python bash
+```
+
+If you want to install the plugin but skip dependency installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh \
+  | SKIP_DEPS=1 bash
+```
+
+### Manual Install
+
+If you cannot use the installer script:
 
 ```bash
 mkdir -p ~/.hermes/plugins
-ln -s /Users/leo/project/voice-hermes-plugin ~/.hermes/plugins/xalgo-voice-platform
+git clone https://github.com/leo-yli/voice-hermes-plugin.git ~/.hermes/plugins/xalgo-voice-platform
+python3 -m pip install -r ~/.hermes/plugins/xalgo-voice-platform/requirements.txt
 ```
 
-If the target host cannot access this project path, copy the directory instead:
-
-```bash
-mkdir -p ~/.hermes/plugins/xalgo-voice-platform
-cp -R /Users/leo/project/voice-hermes-plugin/* ~/.hermes/plugins/xalgo-voice-platform/
-```
-
-### 3. Enable the plugin
-
-Edit `~/.hermes/config.yaml` and add the plugin to `plugins.enabled`:
+Then edit `~/.hermes/config.yaml` and add the plugin to `plugins.enabled`:
 
 ```yaml
 plugins:
@@ -60,7 +75,21 @@ plugins:
 
 If you already have enabled plugins, append `xalgo-voice-platform` to the existing list.
 
-### 4. Bind your Xalgo account
+### Upgrade
+
+Run the installer again to pull the latest version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo-yli/voice-hermes-plugin/main/scripts/install.sh | bash
+```
+
+Or update manually:
+
+```bash
+git -C ~/.hermes/plugins/xalgo-voice-platform pull --ff-only
+```
+
+## Bind Your Xalgo Account
 
 Run Hermes gateway setup and choose `Xalgo Voice`:
 
@@ -86,7 +115,7 @@ XALGO_VOICE_BOUND_USER_NAME=...
 XALGO_VOICE_DEVICE_LABEL=...
 ```
 
-### 5. Restart and verify
+## Restart and Verify
 
 Restart the Hermes gateway:
 

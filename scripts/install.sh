@@ -25,6 +25,10 @@ find_python() {
     printf '%s\n' "$HERMES_PYTHON"
     return
   fi
+  if [ -x "$HERMES_HOME/hermes-agent/venv/bin/python" ]; then
+    printf '%s\n' "$HERMES_HOME/hermes-agent/venv/bin/python"
+    return
+  fi
   if command -v python3 >/dev/null 2>&1; then
     command -v python3
     return
@@ -35,6 +39,22 @@ find_python() {
   fi
   printf 'Missing required command: python3\n' >&2
   exit 1
+}
+
+find_uv() {
+  if [ -n "${HERMES_UV:-}" ]; then
+    printf '%s\n' "$HERMES_UV"
+    return
+  fi
+  if [ -x "$HERMES_HOME/bin/uv" ]; then
+    printf '%s\n' "$HERMES_HOME/bin/uv"
+    return
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    command -v uv
+    return
+  fi
+  return 1
 }
 
 install_or_update_plugin() {
@@ -76,13 +96,28 @@ install_dependencies() {
     return
   fi
 
-  log "Installing Python dependencies with $py"
-  if "$py" -m pip install -r "$requirements"; then
+  if "$py" -m pip --version >/dev/null 2>&1; then
+    log "Installing Python dependencies with $py"
+    if "$py" -m pip install -r "$requirements"; then
+      return
+    fi
+
+    log "Plain pip install failed; retrying with --user"
+    if "$py" -m pip install --user -r "$requirements"; then
+      return
+    fi
+  else
+    log "pip is not available for $py"
+  fi
+
+  if uv="$(find_uv)"; then
+    log "Installing Python dependencies with uv using $py"
+    "$uv" pip install --python "$py" -r "$requirements"
     return
   fi
 
-  log "Plain pip install failed; retrying with --user"
-  "$py" -m pip install --user -r "$requirements"
+  printf 'Python dependency installation failed and uv was not found.\n' >&2
+  exit 1
 }
 
 enable_plugin() {

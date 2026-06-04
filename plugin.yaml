@@ -23,8 +23,7 @@ optional_env:
     prompt: "WebSocket server URL"
     password: false
   - name: XALGO_VOICE_API_BASE_URL
-    description: "Xalgo REST API base URL used for bind/rotate/unbind"
-    prompt: "REST API base URL"
+    description: "Optional override for the Xalgo REST API base URL"
     password: false
   - name: XALGO_VOICE_DEVICE_LABEL
     description: "Device label shown in Xalgo app"

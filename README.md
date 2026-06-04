@@ -99,7 +99,6 @@ hermes gateway setup
 
 按提示输入：
 
-- Xalgo REST API base URL，默认读取本项目 `endpoints.json`
 - Xalgo App 里「连接 Hermes / OpenClaw」生成的 8 位绑定码
 - 设备名称，例如 `Hermes on Mac`
 
@@ -109,7 +108,6 @@ hermes gateway setup
 XALGO_VOICE_TOKEN=...
 XALGO_VOICE_INSTANCE_ID=...
 XALGO_VOICE_SERVER_URL=wss://...
-XALGO_VOICE_API_BASE_URL=https://...
 XALGO_VOICE_BOUND_USER_ID=...
 XALGO_VOICE_BOUND_USER_NAME=...
 XALGO_VOICE_DEVICE_LABEL=...
@@ -140,13 +138,13 @@ hermes gateway status
 XALGO_VOICE_TOKEN=<channel-token>
 XALGO_VOICE_INSTANCE_ID=<stable-instance-id>
 XALGO_VOICE_SERVER_URL=wss://asr-test.jlpay.com/openclaw/connect
-XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com
 XALGO_VOICE_DEVICE_LABEL="Hermes on Mac"
 ```
 
 可选项：
 
 ```bash
+XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com
 XALGO_VOICE_REPLY_MODE=voice_first  # voice_first | text_first | both
 XALGO_VOICE_STREAMING=true
 XALGO_VOICE_HOME_CHANNEL=xalgo:user:default

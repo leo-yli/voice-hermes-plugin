@@ -911,10 +911,7 @@ def interactive_setup() -> None:
         if not prompt_yes_no("Reconfigure Xalgo Voice?", False):
             return
 
-    api_base_url = prompt(
-        "Xalgo REST API base URL",
-        default=get_env_value("XALGO_VOICE_API_BASE_URL") or DEFAULT_ENDPOINTS["apiBaseUrl"],
-    ).strip() or DEFAULT_ENDPOINTS["apiBaseUrl"]
+    api_base_url = DEFAULT_ENDPOINTS["apiBaseUrl"]
     code = prompt("8-character binding code from Xalgo App").strip().upper()
     if len(code) != CODE_LENGTH or not code.isalnum():
         print_warning("Binding code must be 8 alphanumeric characters.")
@@ -947,7 +944,6 @@ def interactive_setup() -> None:
     save_env_value("XALGO_VOICE_BOUND_USER_ID", response.get("user_id", ""))
     save_env_value("XALGO_VOICE_BOUND_USER_NAME", response.get("user_display_name", ""))
     save_env_value("XALGO_VOICE_DEVICE_LABEL", device_label)
-    save_env_value("XALGO_VOICE_API_BASE_URL", api_base_url)
     save_env_value("XALGO_VOICE_SERVER_URL", response.get("ws_url") or DEFAULT_ENDPOINTS["serverUrl"])
     save_env_value("XALGO_VOICE_STREAMING", get_env_value("XALGO_VOICE_STREAMING") or "true")
 

@@ -240,8 +240,10 @@ def parse_inbound_message(event: dict[str, Any]) -> dict[str, Any] | None:
     if not conversation_id:
         return None
     message_id = _clean_str(payload.get("message_id")) or f"xalgo_{uuid.uuid4().hex[:12]}"
+    utterance_id = _clean_str(payload.get("utterance_id")) or _clean_str(payload.get("utteranceId"))
     return {
         "id": message_id,
+        "utterance_id": utterance_id,
         "session_id": session_id,
         "agent_binding_id": agent_binding_id,
         "text": text,
@@ -457,6 +459,10 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
         self._status = "disconnected"
         self._reply_routes: dict[str, dict[str, str]] = {}
         self._latest_reply_route_by_chat: dict[str, dict[str, str]] = {}
+        self._latest_reply_route_by_session: dict[str, dict[str, str]] = {}
+        self._latest_reply_route_by_agent_binding: dict[str, dict[str, str]] = {}
+        self._latest_reply_route_by_utterance: dict[str, dict[str, str]] = {}
+        self._cancelled_reply_to: set[str] = set()
         self._processed_control_events: list[str] = []
         self._missed_pongs = 0
 
@@ -520,6 +526,9 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
 
         message_id = f"reply_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
         route = self._route_for_reply(chat_id, reply_to, metadata)
+        if self._reply_was_cancelled(reply_to, route):
+            logger.info("Xalgo Voice: suppressed reply for cancelled request reply_to=%s", reply_to or route.get("reply_to"))
+            return SendResult(success=True, message_id=message_id)
         reply_to_id = reply_to or route.get("reply_to") or message_id
 
         try:
@@ -624,6 +633,7 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
                 "confirmation",
                 "background_notification",
                 "voice_interrupt",
+                "voice_cancel_request",
                 "delivery_ack",
             ],
         }
@@ -677,8 +687,11 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
         if event_type == "inbound_message":
             await self._handle_inbound(event)
             return
-        if event_type == "voice_interrupt":
+        if event_type in {"voice_interrupt", "voice.interrupt"}:
             await self._handle_voice_interrupt(event)
+            return
+        if event_type in {"voice_cancel_request", "voice.cancel_request"}:
+            await self._handle_voice_cancel_request(event)
             return
         if event_type in {"binding_revoked", "token_rotated_notify", "binding_metadata_updated", "server_announcement"}:
             await self._handle_control_event(event_type, payload, event_id)
@@ -713,12 +726,14 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
 
     async def _handle_voice_interrupt(self, event: dict[str, Any]) -> None:
         payload = _read_record(event.get("payload"))
-        chat_id = _clean_str(payload.get("chat_id"))
-        text = _clean_str(payload.get("text"))
+        route = self._resolve_control_route(payload)
+        chat_id = self._control_chat_id(payload, route)
+        text = _clean_str(payload.get("user_text")) or _clean_str(payload.get("text"))
+        self._mark_reply_cancelled(route)
         if chat_id:
-            source = self.build_source(chat_id=chat_id, chat_type="dm", user_id=chat_id.rsplit(":", 1)[-1])
+            source = self._build_control_source(payload, chat_id)
             try:
-                await self.interrupt_session_activity(build_session_key(source), chat_id)
+                await self.interrupt_session_activity(self._session_key_for_source(source), chat_id)
             except Exception:
                 logger.debug("Xalgo Voice: interrupt_session_activity failed", exc_info=True)
         if text:
@@ -727,13 +742,160 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
                 "payload": {
                     "message_id": f"interrupt_{event.get('event_id')}",
                     "chat_id": chat_id,
+                    "session_id": _clean_str(payload.get("session_id")),
+                    "agent_binding_id": _clean_str(payload.get("agent_binding_id")),
+                    "utterance_id": _clean_str(payload.get("utterance_id")),
                     "chat_type": "direct",
                     "sender": {"id": chat_id.rsplit(":", 1)[-1] if chat_id else "unknown", "name": "Xalgo User"},
                     "text": text,
-                    "metadata": {"input_type": "voice"},
+                    "metadata": {
+                        "input_type": "voice",
+                        "session_id": _clean_str(payload.get("session_id")),
+                        "agent_binding_id": _clean_str(payload.get("agent_binding_id")),
+                    },
                 },
             }
             await self._handle_inbound(synthetic)
+
+    async def _handle_voice_cancel_request(self, event: dict[str, Any]) -> None:
+        event_id = _clean_str(event.get("event_id"))
+        if self._remember_control_event(event_id):
+            return
+
+        payload = _read_record(event.get("payload"))
+        route = self._resolve_control_route(payload)
+        chat_id = self._control_chat_id(payload, route)
+        self._mark_route_cancelled(payload, route)
+
+        if chat_id:
+            source = self._build_control_source(payload, chat_id)
+            session_key = self._session_key_for_source(source)
+            cancel_session = getattr(self, "cancel_session_processing", None)
+            if callable(cancel_session):
+                try:
+                    await cancel_session(session_key, release_guard=True, discard_pending=True)
+                except TypeError:
+                    await cancel_session(session_key)
+                except Exception:
+                    logger.debug("Xalgo Voice: cancel_session_processing failed", exc_info=True)
+            else:
+                try:
+                    await self.interrupt_session_activity(session_key, chat_id)
+                except Exception:
+                    logger.debug("Xalgo Voice: interrupt fallback for cancel failed", exc_info=True)
+
+        await self._send_cancel_confirmation(payload, route, chat_id)
+
+    def _remember_control_event(self, event_id: str) -> bool:
+        if not event_id:
+            return False
+        if event_id in self._processed_control_events:
+            return True
+        self._processed_control_events.append(event_id)
+        self._processed_control_events = self._processed_control_events[-100:]
+        return False
+
+    def _resolve_control_route(self, payload: dict[str, Any]) -> dict[str, str]:
+        message_id = _clean_str(payload.get("message_id"))
+        utterance_id = _clean_str(payload.get("utterance_id"))
+        session_id = _clean_str(payload.get("session_id")) or _clean_str(payload.get("sessionId"))
+        agent_binding_id = _clean_str(payload.get("agent_binding_id")) or _clean_str(payload.get("agentBindingId"))
+        chat_id = (
+            _clean_str(payload.get("chat_id"))
+            or _clean_str(payload.get("conversation_id"))
+            or _clean_str(payload.get("conversationId"))
+        )
+        for key, store in (
+            (message_id, self._reply_routes),
+            (utterance_id, self._latest_reply_route_by_utterance),
+            (session_id, self._latest_reply_route_by_session),
+            (agent_binding_id, self._latest_reply_route_by_agent_binding),
+            (chat_id, self._latest_reply_route_by_chat),
+        ):
+            if key and key in store:
+                return dict(store[key])
+        return {}
+
+    def _control_chat_id(self, payload: dict[str, Any], route: dict[str, str]) -> str:
+        return (
+            _clean_str(payload.get("chat_id"))
+            or _clean_str(payload.get("conversation_id"))
+            or _clean_str(payload.get("conversationId"))
+            or route.get("chat_id", "")
+            or _clean_str(payload.get("session_id"))
+            or _clean_str(payload.get("sessionId"))
+        )
+
+    def _build_control_source(self, payload: dict[str, Any], chat_id: str):
+        sender = _read_record(payload.get("sender"))
+        user_id = _clean_str(sender.get("id")) or chat_id.rsplit(":", 1)[-1]
+        return self.build_source(
+            chat_id=chat_id,
+            chat_type="dm",
+            user_id=user_id,
+            user_name=_clean_str(sender.get("name")) or "Xalgo User",
+            message_id=_clean_str(payload.get("message_id")) or _clean_str(payload.get("utterance_id")) or None,
+        )
+
+    def _session_key_for_source(self, source: Any) -> str:
+        extra = getattr(self.config, "extra", {}) or {}
+        try:
+            return build_session_key(
+                source,
+                group_sessions_per_user=extra.get("group_sessions_per_user", True),
+                thread_sessions_per_user=extra.get("thread_sessions_per_user", False),
+            )
+        except TypeError:
+            return build_session_key(source)
+
+    def _mark_route_cancelled(self, payload: dict[str, Any], route: dict[str, str]) -> None:
+        for key in (
+            _clean_str(payload.get("message_id")),
+            _clean_str(payload.get("utterance_id")),
+            route.get("reply_to", ""),
+            route.get("utterance_id", ""),
+        ):
+            if key:
+                self._cancelled_reply_to.add(key)
+        if len(self._cancelled_reply_to) > 1000:
+            self._cancelled_reply_to = set(list(self._cancelled_reply_to)[-500:])
+
+    def _mark_reply_cancelled(self, route: dict[str, str]) -> None:
+        reply_to = route.get("reply_to", "")
+        if reply_to:
+            self._cancelled_reply_to.add(reply_to)
+        if len(self._cancelled_reply_to) > 1000:
+            self._cancelled_reply_to = set(list(self._cancelled_reply_to)[-500:])
+
+    def _reply_was_cancelled(self, reply_to: str | None, route: dict[str, str]) -> bool:
+        for key in (reply_to or "", route.get("reply_to", ""), route.get("utterance_id", "")):
+            if key and key in self._cancelled_reply_to:
+                return True
+        return False
+
+    async def _send_cancel_confirmation(self, payload: dict[str, Any], route: dict[str, str], chat_id: str) -> None:
+        if self._ws is None or not chat_id:
+            return
+        message_id = f"cancel_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+        reply_to = _clean_str(payload.get("message_id")) or _clean_str(payload.get("utterance_id")) or route.get("reply_to", "") or message_id
+        session_id = _clean_str(payload.get("session_id")) or _clean_str(payload.get("sessionId")) or route.get("session_id", "")
+        agent_binding_id = (
+            _clean_str(payload.get("agent_binding_id"))
+            or _clean_str(payload.get("agentBindingId"))
+            or route.get("agent_binding_id", "")
+        )
+        try:
+            await self._send_event(format_outbound_message(
+                message_id=message_id,
+                chat_id=chat_id,
+                reply_to=reply_to,
+                text="已取消",
+                reply_mode=self.settings.reply_mode,
+                session_id=session_id,
+                agent_binding_id=agent_binding_id,
+            ))
+        except Exception:
+            logger.debug("Xalgo Voice: cancel confirmation send failed", exc_info=True)
 
     async def _handle_error_event(self, payload: dict[str, Any]) -> None:
         code = _clean_str(payload.get("code"))
@@ -753,11 +915,8 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
             self._mark_disconnected()
 
     async def _handle_control_event(self, event_type: str, payload: dict[str, Any], event_id: str) -> None:
-        if event_id and event_id in self._processed_control_events:
+        if self._remember_control_event(event_id):
             return
-        if event_id:
-            self._processed_control_events.append(event_id)
-            self._processed_control_events = self._processed_control_events[-100:]
 
         if event_type == "binding_revoked":
             logger.warning("Xalgo Voice: binding revoked reason=%s", payload.get("reason"))
@@ -808,11 +967,19 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
     def _remember_route(self, message: dict[str, Any]) -> None:
         route = {
             "reply_to": message["id"],
+            "chat_id": message["conversation_id"],
             "session_id": message.get("session_id") or "",
             "agent_binding_id": message.get("agent_binding_id") or "",
+            "utterance_id": message.get("utterance_id") or "",
         }
         self._reply_routes[message["id"]] = route
         self._latest_reply_route_by_chat[message["conversation_id"]] = route
+        if route["session_id"]:
+            self._latest_reply_route_by_session[route["session_id"]] = route
+        if route["agent_binding_id"]:
+            self._latest_reply_route_by_agent_binding[route["agent_binding_id"]] = route
+        if route["utterance_id"]:
+            self._latest_reply_route_by_utterance[route["utterance_id"]] = route
         if len(self._reply_routes) > 500:
             for key in list(self._reply_routes)[:100]:
                 self._reply_routes.pop(key, None)

@@ -684,7 +684,7 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
         if event_type == "error":
             await self._handle_error_event(payload)
             return
-        if event_type == "inbound_message":
+        if event_type in {"inbound_message", "voice_user_turn", "voice.user_turn"}:
             await self._handle_inbound(event)
             return
         if event_type in {"voice_interrupt", "voice.interrupt"}:

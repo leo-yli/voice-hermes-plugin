@@ -188,6 +188,41 @@ def test_voice_cancel_request_cancels_session_and_confirms():
     asyncio.run(run())
 
 
+def test_voice_user_turn_routes_reply_with_session_fields():
+    async def run():
+        adapter = XalgoVoiceAdapter(FakeConfig())
+        adapter._ws = FakeWebSocket()
+        adapter.handle_message = AsyncMock()
+
+        await adapter._handle_event(create_event(
+            "voice.user_turn",
+            {
+                "message_id": "msg_1",
+                "utterance_id": "utt_1",
+                "session_id": "voice_session_1",
+                "agent_binding_id": "agent_binding_1",
+                "text": "hello hermes",
+                "metadata": {"input_type": "voice"},
+            },
+        ))
+
+        adapter.handle_message.assert_awaited_once()
+        event = adapter.handle_message.await_args.args[0]
+        assert event.text == "hello hermes"
+        assert event.source.chat_id == "voice_session_1"
+
+        result = await adapter.send(event.source.chat_id, "hello back", reply_to=event.message_id)
+
+        assert result.success is True
+        assert adapter._ws.sent[-2]["type"] == "outbound_delta"
+        assert adapter._ws.sent[-2]["payload"]["session_id"] == "voice_session_1"
+        assert adapter._ws.sent[-2]["payload"]["agent_binding_id"] == "agent_binding_1"
+        assert adapter._ws.sent[-1]["payload"]["is_final"] is True
+        assert adapter._ws.sent[-1]["payload"]["session_id"] == "voice_session_1"
+
+    asyncio.run(run())
+
+
 def test_send_suppresses_cancelled_reply():
     async def run():
         adapter = XalgoVoiceAdapter(FakeConfig())

@@ -1,6 +1,7 @@
 import sys
 import asyncio
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -93,6 +94,44 @@ def test_rest_client_uses_agent_channel_binding_paths(monkeypatch):
     assert all("/api/v1/agent-channel/bindings/" in url for _, url in requests)
 
 
+def test_rest_client_exchange_returns_server_home_channel(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {
+                "channel_token": "new-token",
+                "home_channel": {
+                    "chat_id": "user:u1:agent:a1",
+                    "name": "Test Agent",
+                },
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("adapter.httpx.AsyncClient", FakeAsyncClient)
+
+    async def run():
+        client = RestClient("https://example.test/api/v1/agent-channel")
+        return await client.exchange("ABCDEFGH", "hermes_test", "Hermes")
+
+    result = asyncio.run(run())
+
+    assert result["home_channel"] == {"chat_id": "user:u1:agent:a1", "name": "Test Agent"}
+
+
 def test_env_enablement_does_not_seed_fake_home_channel(monkeypatch):
     monkeypatch.setenv("XALGO_VOICE_TOKEN", "token")
     monkeypatch.setenv("XALGO_VOICE_INSTANCE_ID", "hermes_test")
@@ -114,6 +153,56 @@ def test_env_enablement_uses_explicit_home_channel(monkeypatch):
 
     assert seed is not None
     assert seed["home_channel"] == {"chat_id": "user:u1:agent:a1", "name": "Agent Home"}
+
+
+def test_connected_event_applies_server_home_channel_in_memory(monkeypatch, tmp_path):
+    monkeypatch.delenv("XALGO_VOICE_HOME_CHANNEL", raising=False)
+    monkeypatch.delenv("XALGO_VOICE_HOME_CHANNEL_NAME", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    adapter = XalgoVoiceAdapter(FakeConfig())
+
+    event = create_event(
+        "connected",
+        {
+            "connection_id": "conn_1",
+            "heartbeat_interval_ms": 15000,
+            "home_channel": {
+                "chat_id": "user:u1:agent:a1",
+                "name": "Test Agent",
+            },
+        },
+    )
+
+    asyncio.run(adapter._handle_event(event))
+
+    assert os.environ["XALGO_VOICE_HOME_CHANNEL"] == "user:u1:agent:a1"
+    assert os.environ["XALGO_VOICE_HOME_CHANNEL_NAME"] == "Test Agent"
+    assert not (tmp_path / ".env").exists()
+
+
+def test_binding_metadata_updated_applies_server_home_channel(monkeypatch, tmp_path):
+    monkeypatch.delenv("XALGO_VOICE_HOME_CHANNEL", raising=False)
+    monkeypatch.delenv("XALGO_VOICE_HOME_CHANNEL_NAME", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    adapter = XalgoVoiceAdapter(FakeConfig())
+
+    event = create_event(
+        "binding_metadata_updated",
+        {
+            "changes": {
+                "home_channel": {
+                    "chat_id": "user:u2:agent:a2",
+                    "name": "Updated Agent",
+                },
+            },
+        },
+    )
+
+    asyncio.run(adapter._handle_event(event))
+
+    assert os.environ["XALGO_VOICE_HOME_CHANNEL"] == "user:u2:agent:a2"
+    assert os.environ["XALGO_VOICE_HOME_CHANNEL_NAME"] == "Updated Agent"
+    assert not (tmp_path / ".env").exists()
 
 
 def test_parse_inbound_message_accepts_xalgo_shape():

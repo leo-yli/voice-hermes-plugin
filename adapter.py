@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - surfaced by check_requirements
     websockets = None
 
 try:
-    from gateway.config import Platform, PlatformConfig
+    from gateway.config import HomeChannel, Platform, PlatformConfig
     from gateway.platforms.base import (
         BasePlatformAdapter,
         MessageEvent,
@@ -34,6 +34,13 @@ try:
     from gateway.session import build_session_key
 except Exception:  # pragma: no cover - local unit-test fallback outside Hermes
     from enum import Enum
+
+    @dataclass
+    class HomeChannel:
+        platform: Any
+        chat_id: str
+        name: str
+        thread_id: Optional[str] = None
 
     @dataclass
     class PlatformConfig:
@@ -198,6 +205,33 @@ def parse_event(raw: str | bytes) -> dict[str, Any] | None:
 
 def _read_record(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _read_home_channel(value: Any) -> dict[str, str]:
+    data = _read_record(value)
+    chat_id = _clean_str(data.get("chat_id") or data.get("id"))
+    if not chat_id:
+        return {}
+    name = _clean_str(data.get("name") or data.get("chat_name") or data.get("title")) or chat_id
+    thread_id = _clean_str(data.get("thread_id") or data.get("threadId"))
+    home = {"chat_id": chat_id, "name": name}
+    if thread_id:
+        home["thread_id"] = thread_id
+    return home
+
+
+def _home_channel_from_payload(payload: dict[str, Any]) -> dict[str, str]:
+    for key in ("home_channel", "homeChannel"):
+        home = _read_home_channel(payload.get(key))
+        if home:
+            return home
+    for parent in ("binding", "metadata"):
+        nested = _read_record(payload.get(parent))
+        for key in ("home_channel", "homeChannel"):
+            home = _read_home_channel(nested.get(key))
+            if home:
+                return home
+    return {}
 
 
 def _read_inbound_text(payload: dict[str, Any]) -> str:
@@ -373,7 +407,7 @@ class RestClient:
     def __init__(self, api_base_url: str) -> None:
         self.base = api_base_url.rstrip("/")
 
-    async def exchange(self, code: str, instance_id: str, device_label: str) -> dict[str, str]:
+    async def exchange(self, code: str, instance_id: str, device_label: str) -> dict[str, Any]:
         if httpx is None:
             raise RuntimeError("httpx is not installed")
         url = f"{self.base}/bindings/exchange"
@@ -398,7 +432,7 @@ class RestClient:
                 kind = "unknown"
             raise RuntimeError(f"binding exchange failed: {kind} HTTP {response.status_code} {snippet}")
         data = response.json()
-        return {
+        result = {
             "channel_token": _clean_str(data.get("channel_token")),
             "token_prefix": _clean_str(data.get("token_prefix")),
             "binding_id": _clean_str(data.get("binding_id")),
@@ -406,6 +440,10 @@ class RestClient:
             "user_display_name": _clean_str(data.get("user_display_name")),
             "ws_url": _clean_str(data.get("ws_url")),
         }
+        home = _home_channel_from_payload(data)
+        if home:
+            result["home_channel"] = home
+        return result
 
     async def rotate(self, old_token: str, instance_id: str) -> str:
         if httpx is None:
@@ -678,6 +716,7 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
         if event_type == "connected":
             self._reconnect.connection_id = _clean_str(payload.get("connection_id"))
             interval = int(payload.get("heartbeat_interval_ms") or 15000)
+            self._apply_server_home_channel(_home_channel_from_payload(payload))
             self._reconnect.reset()
             self._missed_pongs = 0
             self._mark_connected()
@@ -739,6 +778,29 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
         )
         logger.info("Xalgo Voice: inbound accepted id=%s chat=%s", message["id"], message["conversation_id"])
         await self.handle_message(msg_event)
+
+    def _apply_server_home_channel(self, home: dict[str, str]) -> None:
+        chat_id = _clean_str(home.get("chat_id"))
+        if not chat_id:
+            return
+        name = _clean_str(home.get("name")) or chat_id
+        thread_id = _clean_str(home.get("thread_id"))
+        os.environ["XALGO_VOICE_HOME_CHANNEL"] = chat_id
+        os.environ["XALGO_VOICE_HOME_CHANNEL_NAME"] = name
+        if thread_id:
+            os.environ["XALGO_VOICE_HOME_CHANNEL_THREAD_ID"] = thread_id
+        elif "XALGO_VOICE_HOME_CHANNEL_THREAD_ID" in os.environ:
+            os.environ.pop("XALGO_VOICE_HOME_CHANNEL_THREAD_ID", None)
+        try:
+            self.config.home_channel = HomeChannel(
+                platform=Platform(PLATFORM_NAME),
+                chat_id=chat_id,
+                name=name,
+                thread_id=thread_id or None,
+            )
+        except Exception:
+            logger.debug("Xalgo Voice: failed to update runtime home_channel config", exc_info=True)
+        logger.info("Xalgo Voice: applied server home channel in memory chat=%s", chat_id)
 
     async def _handle_voice_interrupt(self, event: dict[str, Any]) -> None:
         payload = _read_record(event.get("payload"))
@@ -954,6 +1016,7 @@ class XalgoVoiceAdapter(BasePlatformAdapter):
             changes = _read_record(payload.get("changes"))
             if _clean_str(changes.get("device_label")):
                 self.settings.device_label = _clean_str(changes.get("device_label"))
+            self._apply_server_home_channel(_home_channel_from_payload(changes) or _home_channel_from_payload(payload))
             return
         if event_type == "server_announcement":
             logger.info("Xalgo Voice announcement [%s] %s: %s", payload.get("level"), payload.get("title"), payload.get("body"))
@@ -1108,7 +1171,7 @@ def interactive_setup() -> None:
         default=get_env_value("XALGO_VOICE_DEVICE_LABEL") or f"Hermes on {socket.gethostname()}",
     ).strip() or f"Hermes on {socket.gethostname()}"
 
-    async def _run_exchange() -> dict[str, str]:
+    async def _run_exchange() -> dict[str, Any]:
         return await RestClient(api_base_url).exchange(code, instance_id, device_label)
 
     print_info("Exchanging binding code...")
@@ -1134,7 +1197,7 @@ def interactive_setup() -> None:
 
     print_success("Xalgo Voice binding saved to ~/.hermes/.env")
     print_info("Enable plugin xalgo-voice-platform and restart the Hermes gateway.")
-    print_info("After opening the target Xalgo Agent chat, send /sethome once to use it for cron and cross-platform deliveries.")
+    print_info("The server binding will provide the Xalgo Agent home channel when the gateway connects.")
 
 
 async def _standalone_send(

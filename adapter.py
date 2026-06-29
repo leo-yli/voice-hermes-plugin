@@ -1043,11 +1043,13 @@ def _env_enablement() -> dict | None:
         "reply_mode": os.getenv("XALGO_VOICE_REPLY_MODE", DEFAULT_REPLY_MODE).strip(),
         "streaming": _truthy(os.getenv("XALGO_VOICE_STREAMING"), True),
     }
-    bound_name = seed.get("bound_user_name") or seed.get("bound_user_id") or "Xalgo Voice"
-    seed["home_channel"] = {
-        "chat_id": os.getenv("XALGO_VOICE_HOME_CHANNEL", "xalgo:user:default"),
-        "name": os.getenv("XALGO_VOICE_HOME_CHANNEL_NAME", bound_name),
-    }
+    home_channel = os.getenv("XALGO_VOICE_HOME_CHANNEL", "").strip()
+    if home_channel:
+        bound_name = seed.get("bound_user_name") or seed.get("bound_user_id") or "Xalgo Voice"
+        seed["home_channel"] = {
+            "chat_id": home_channel,
+            "name": os.getenv("XALGO_VOICE_HOME_CHANNEL_NAME", bound_name),
+        }
     return seed
 
 
@@ -1132,6 +1134,7 @@ def interactive_setup() -> None:
 
     print_success("Xalgo Voice binding saved to ~/.hermes/.env")
     print_info("Enable plugin xalgo-voice-platform and restart the Hermes gateway.")
+    print_info("After opening the target Xalgo Agent chat, send /sethome once to use it for cron and cross-platform deliveries.")
 
 
 async def _standalone_send(

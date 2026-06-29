@@ -113,6 +113,16 @@ XALGO_VOICE_BOUND_USER_NAME=...
 XALGO_VOICE_DEVICE_LABEL=...
 ```
 
+打开想作为默认投递位置的 Xalgo Agent 对话后，发送一次：
+
+```text
+/sethome
+```
+
+Hermes 会把当前真实会话保存为 home channel，用于 cron 结果和跨平台消息投递。
+这一步只需要做一次；如果看到 `No home channel is set for Xalgo_Voice` 提示，也用
+`/sethome` 处理。
+
 ## 重启并验证
 
 重启 Hermes gateway：
@@ -147,7 +157,8 @@ XALGO_VOICE_DEVICE_LABEL="Hermes on Mac"
 XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com/api/v1/agent-channel
 XALGO_VOICE_REPLY_MODE=voice_first  # voice_first | text_first | both
 XALGO_VOICE_STREAMING=true
-XALGO_VOICE_HOME_CHANNEL=xalgo:user:default
+# 推荐在目标 Agent 对话里发送 /sethome 自动写入；不要手填伪默认值。
+XALGO_VOICE_HOME_CHANNEL=<set-by-/sethome>
 ```
 
 ## 开发验证

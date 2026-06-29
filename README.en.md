@@ -113,6 +113,16 @@ XALGO_VOICE_BOUND_USER_NAME=...
 XALGO_VOICE_DEVICE_LABEL=...
 ```
 
+After opening the Xalgo Agent chat that should receive default deliveries, send:
+
+```text
+/sethome
+```
+
+Hermes saves that real chat as the home channel for cron results and cross-platform
+messages. This only needs to be done once. If you see `No home channel is set for
+Xalgo_Voice`, send `/sethome` in that chat.
+
 ## Restart and Verify
 
 Restart the Hermes gateway:
@@ -148,7 +158,8 @@ Optional settings:
 XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com/api/v1/agent-channel
 XALGO_VOICE_REPLY_MODE=voice_first  # voice_first | text_first | both
 XALGO_VOICE_STREAMING=true
-XALGO_VOICE_HOME_CHANNEL=xalgo:user:default
+# Prefer sending /sethome in the target Agent chat; do not use a fake default.
+XALGO_VOICE_HOME_CHANNEL=<set-by-/sethome>
 ```
 
 ## Development Checks

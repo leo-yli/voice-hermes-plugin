@@ -10,6 +10,7 @@ sys.path.insert(0, "/tmp/hermes-agent")
 from adapter import (  # noqa: E402
     RestClient,
     XalgoVoiceAdapter,
+    _env_enablement,
     create_event,
     format_outbound_delta,
     format_outbound_message,
@@ -90,6 +91,29 @@ def test_rest_client_uses_agent_channel_binding_paths(monkeypatch):
         ("GET", "https://example.test/api/v1/agent-channel/bindings/me"),
     ]
     assert all("/api/v1/agent-channel/bindings/" in url for _, url in requests)
+
+
+def test_env_enablement_does_not_seed_fake_home_channel(monkeypatch):
+    monkeypatch.setenv("XALGO_VOICE_TOKEN", "token")
+    monkeypatch.setenv("XALGO_VOICE_INSTANCE_ID", "hermes_test")
+    monkeypatch.delenv("XALGO_VOICE_HOME_CHANNEL", raising=False)
+
+    seed = _env_enablement()
+
+    assert seed is not None
+    assert "home_channel" not in seed
+
+
+def test_env_enablement_uses_explicit_home_channel(monkeypatch):
+    monkeypatch.setenv("XALGO_VOICE_TOKEN", "token")
+    monkeypatch.setenv("XALGO_VOICE_INSTANCE_ID", "hermes_test")
+    monkeypatch.setenv("XALGO_VOICE_HOME_CHANNEL", "user:u1:agent:a1")
+    monkeypatch.setenv("XALGO_VOICE_HOME_CHANNEL_NAME", "Agent Home")
+
+    seed = _env_enablement()
+
+    assert seed is not None
+    assert seed["home_channel"] == {"chat_id": "user:u1:agent:a1", "name": "Agent Home"}
 
 
 def test_parse_inbound_message_accepts_xalgo_shape():

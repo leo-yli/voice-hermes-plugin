@@ -1,4 +1,4 @@
 {
-  "apiBaseUrl": "https://asr-test.jlpay.com",
-  "serverUrl": "wss://asr-test.jlpay.com/openclaw/connect"
+  "apiBaseUrl": "https://asr-test.jlpay.com/api/v1/agent-channel",
+  "serverUrl": "wss://asr-test.jlpay.com/agent-channel/connect"
 }

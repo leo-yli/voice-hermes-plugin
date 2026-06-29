@@ -3,7 +3,7 @@
 [中文](./README.md) | [English](./README.en.md)
 
 Xalgo Voice Hermes platform plugin. It connects Xalgo glasses to Hermes Agent
-through the same Xalgo voice channel protocol used by `voice-openclaw-plugin`.
+through the Agent Channel voice protocol.
 
 ## Features
 
@@ -138,14 +138,14 @@ You can skip setup and write the required env vars into `~/.hermes/.env`:
 ```bash
 XALGO_VOICE_TOKEN=<channel-token>
 XALGO_VOICE_INSTANCE_ID=<stable-instance-id>
-XALGO_VOICE_SERVER_URL=wss://asr-test.jlpay.com/openclaw/connect
+XALGO_VOICE_SERVER_URL=wss://asr-test.jlpay.com/agent-channel/connect
 XALGO_VOICE_DEVICE_LABEL="Hermes on Mac"
 ```
 
 Optional settings:
 
 ```bash
-XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com
+XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com/api/v1/agent-channel
 XALGO_VOICE_REPLY_MODE=voice_first  # voice_first | text_first | both
 XALGO_VOICE_STREAMING=true
 XALGO_VOICE_HOME_CHANNEL=xalgo:user:default

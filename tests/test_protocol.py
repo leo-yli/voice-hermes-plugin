@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, "/tmp/hermes-agent")
 
 from adapter import (  # noqa: E402
+    RestClient,
     XalgoVoiceAdapter,
     create_event,
     format_outbound_delta,
@@ -22,7 +23,7 @@ class FakeConfig:
     extra = {
         "token": "token",
         "instance_id": "hermes_test",
-        "server_url": "wss://example.test/openclaw/connect",
+        "server_url": "wss://example.test/agent-channel/connect",
     }
 
 
@@ -43,6 +44,52 @@ def test_parse_event_accepts_valid_event():
 
 def test_parse_event_rejects_invalid_json():
     assert parse_event("not json") is None
+
+
+def test_rest_client_uses_agent_channel_binding_paths(monkeypatch):
+    requests = []
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"channel_token": "new-token"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            requests.append(("POST", url))
+            return FakeResponse()
+
+        async def get(self, url, **kwargs):
+            requests.append(("GET", url))
+            return FakeResponse()
+
+    monkeypatch.setattr("adapter.httpx.AsyncClient", FakeAsyncClient)
+
+    async def run():
+        client = RestClient("https://example.test/api/v1/agent-channel")
+        await client.exchange("ABCDEFGH", "hermes_test", "Hermes")
+        await client.rotate("old-token", "hermes_test")
+        await client.me("token", "hermes_test")
+
+    asyncio.run(run())
+
+    assert requests == [
+        ("POST", "https://example.test/api/v1/agent-channel/bindings/exchange"),
+        ("POST", "https://example.test/api/v1/agent-channel/bindings/rotate"),
+        ("GET", "https://example.test/api/v1/agent-channel/bindings/me"),
+    ]
+    assert all("/api/v1/agent-channel/bindings/" in url for _, url in requests)
 
 
 def test_parse_inbound_message_accepts_xalgo_shape():

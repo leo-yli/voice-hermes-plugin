@@ -110,6 +110,8 @@ logger = logging.getLogger(__name__)
 PLUGIN_VERSION = "2026.6.1"
 PLATFORM_NAME = "xalgo_voice"
 PLUGIN_NAME = "xalgo-voice-platform"
+DEFAULT_API_BASE_URL = "https://asr-test.jlpay.com/api/v1/agent-channel"
+DEFAULT_SERVER_URL = "wss://asr-test.jlpay.com/agent-channel/connect"
 DEFAULT_REPLY_MODE = "voice_first"
 DEFAULT_RECONNECT_MIN_MS = 1000
 DEFAULT_RECONNECT_MAX_MS = 30000
@@ -122,13 +124,13 @@ def _load_endpoints() -> dict[str, str]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return {
-            "apiBaseUrl": str(data.get("apiBaseUrl") or "https://asr-test.jlpay.com"),
-            "serverUrl": str(data.get("serverUrl") or "wss://asr-test.jlpay.com/openclaw/connect"),
+            "apiBaseUrl": str(data.get("apiBaseUrl") or DEFAULT_API_BASE_URL),
+            "serverUrl": str(data.get("serverUrl") or DEFAULT_SERVER_URL),
         }
     except Exception:
         return {
-            "apiBaseUrl": "https://asr-test.jlpay.com",
-            "serverUrl": "wss://asr-test.jlpay.com/openclaw/connect",
+            "apiBaseUrl": DEFAULT_API_BASE_URL,
+            "serverUrl": DEFAULT_SERVER_URL,
         }
 
 
@@ -374,7 +376,7 @@ class RestClient:
     async def exchange(self, code: str, instance_id: str, device_label: str) -> dict[str, str]:
         if httpx is None:
             raise RuntimeError("httpx is not installed")
-        url = f"{self.base}/v1/openclaw/bindings/exchange"
+        url = f"{self.base}/bindings/exchange"
         headers = {
             "x-plugin-version": PLUGIN_VERSION,
             "x-idempotency-key": f"idem_{int(time.time() * 1000)}_{uuid.uuid4().hex}",
@@ -408,7 +410,7 @@ class RestClient:
     async def rotate(self, old_token: str, instance_id: str) -> str:
         if httpx is None:
             raise RuntimeError("httpx is not installed")
-        url = f"{self.base}/v1/openclaw/bindings/rotate"
+        url = f"{self.base}/bindings/rotate"
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 url,
@@ -418,6 +420,20 @@ class RestClient:
         if response.status_code != 200:
             raise RuntimeError(f"token rotate failed: HTTP {response.status_code} {response.text[:200]}")
         return _clean_str(response.json().get("channel_token"))
+
+    async def me(self, token: str, instance_id: str) -> dict[str, Any]:
+        if httpx is None:
+            raise RuntimeError("httpx is not installed")
+        url = f"{self.base}/bindings/me"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                url,
+                headers={"authorization": f"Bearer {token}", "x-instance-id": instance_id},
+            )
+        if response.status_code != 200:
+            raise RuntimeError(f"binding lookup failed: HTTP {response.status_code} {response.text[:200]}")
+        data = response.json()
+        return data if isinstance(data, dict) else {}
 
 
 class ReconnectState:

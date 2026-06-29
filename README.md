@@ -2,8 +2,8 @@
 
 [中文](./README.md) | [English](./README.en.md)
 
-Xalgo Voice Hermes 平台插件。它通过 `voice-openclaw-plugin` 同款 Xalgo 语音通道协议，
-把 Xalgo 眼镜接入 Hermes Agent。
+Xalgo Voice Hermes 平台插件。它通过 Agent Channel 语音通道协议把 Xalgo 眼镜接入
+Hermes Agent。
 
 ## 功能
 
@@ -99,7 +99,7 @@ hermes gateway setup
 
 按提示输入：
 
-- Xalgo App 里「连接 Hermes / OpenClaw」生成的 8 位绑定码
+- Xalgo App 里「连接 Hermes / Agent Channel」生成的 8 位绑定码
 - 设备名称，例如 `Hermes on Mac`
 
 绑定成功后，插件会把以下变量写入 `~/.hermes/.env`：
@@ -137,14 +137,14 @@ hermes gateway status
 ```bash
 XALGO_VOICE_TOKEN=<channel-token>
 XALGO_VOICE_INSTANCE_ID=<stable-instance-id>
-XALGO_VOICE_SERVER_URL=wss://asr-test.jlpay.com/openclaw/connect
+XALGO_VOICE_SERVER_URL=wss://asr-test.jlpay.com/agent-channel/connect
 XALGO_VOICE_DEVICE_LABEL="Hermes on Mac"
 ```
 
 可选项：
 
 ```bash
-XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com
+XALGO_VOICE_API_BASE_URL=https://asr-test.jlpay.com/api/v1/agent-channel
 XALGO_VOICE_REPLY_MODE=voice_first  # voice_first | text_first | both
 XALGO_VOICE_STREAMING=true
 XALGO_VOICE_HOME_CHANNEL=xalgo:user:default
@@ -183,8 +183,8 @@ adapter.register(Ctx())
 cfg = PlatformConfig(enabled=True, extra={
     "token": "tok",
     "instance_id": "hermes_test",
-    "server_url": "wss://example.test/openclaw/connect",
-    "api_base_url": "https://example.test",
+    "server_url": "wss://example.test/agent-channel/connect",
+    "api_base_url": "https://example.test/api/v1/agent-channel",
 })
 inst = platform_registry.create_adapter("xalgo_voice", cfg)
 print(inst.name, inst.settings.is_bound(), inst.platform.value)
